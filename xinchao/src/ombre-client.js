@@ -394,36 +394,63 @@ export function parseMemoryMapText(raw) {
   }
 
   const stats = {};
-  for (const [key, label] of [['pinned', '固化桶'], ['dynamic', '动态桶'], ['archived', '归档桶']]) {
+  for (const [key, label] of [['pinned', '固化.*桶'], ['dynamic', '动态.*桶'], ['archived', '归档.*桶']]) {
     const match = text.match(new RegExp(`${label}[:：]\\s*(\\d+)`));
     if (match) stats[key] = Number(match[1]);
   }
-  const size = text.match(/总占用[:：]\s*([\d.]+\s*\w+)/);
+  const size = text.match(/(?:总占用|总存储大小)[:：]\s*([\d.]+\s*\w+)/);
   if (size) stats.size = size[1];
 
-  const stars = [];
-  const line = /((?:\uD83D\uDCCC)?)\s*\[([0-9a-f]+)\]\s*《([^》]*)》([^\n]*)/gi;
-  let match;
-  while ((match = line.exec(text)) !== null) {
-    const [, pin, id, title, tail] = match;
+  function extractTail(tail) {
     const domain = (tail.match(/主题[:：]\s*([^\s]+)/) || [])[1] || '';
     const emotion = tail.match(/情感[:：]\s*V(-?[\d.]+)\/A(-?[\d.]+)/);
     const importance = (tail.match(/重要[:：]\s*([\d.]+)/) || [])[1];
     const weight = (tail.match(/权重[:：]\s*([\d.]+)/) || [])[1];
     const tags = (tail.match(/标签[:：]\s*(.+)$/) || [])[1] || '';
-    stars.push(normalizeStar({
-      id,
-      title,
-      pinned: pin.length > 0,
-      bucketType: pin.length > 0 ? 'permanent' : 'dynamic',
+    return {
       domains: domain.split(/[,，]/).filter(Boolean),
       valence: emotion ? Number(emotion[1]) : null,
       arousal: emotion ? Number(emotion[2]) : null,
       importance: importance ? Number(importance) : null,
       weight: weight ? Number(weight) : null,
       tags: tags.split(/[,，]/).map((item) => item.trim()).filter(Boolean),
-      historical: true,
+    };
+  }
+
+  const stars = [];
+  let match;
+
+  // Format A: bundled OB — 📌 [hex_id] 《 title 》 rest
+  const lineA = /((?:\uD83D\uDCCC)?)\s*\[([0-9a-f]+)\]\s*《([^》]*)》([^\n]*)/gi;
+  while ((match = lineA.exec(text)) !== null) {
+    const [, pin, id, title, tail] = match;
+    stars.push(normalizeStar({
+      id, title, pinned: pin.length > 0,
+      bucketType: pin.length > 0 ? 'permanent' : 'dynamic',
+      ...extractTail(tail), historical: true,
     }));
+  }
+
+  // Format B: standalone OB — ICON [name_or_id] bucket_id:hex rest
+  if (stars.length === 0) {
+    const lineB = /([^\n]*?)\[([^\]]+)\]\s+bucket_id:([0-9a-z_-]+)\s*([^\n]*)/gi;
+    while ((match = lineB.exec(text)) !== null) {
+      const [, prefix, bracket, bucketId, tail] = match;
+      const title = bracket !== bucketId ? bracket : null;
+      const pinned = prefix.includes('📌');
+      const bucketType = pinned ? 'permanent'
+        : prefix.includes('📦') ? 'permanent'
+        : prefix.includes('🫧') ? 'feel'
+        : prefix.includes('📋') ? 'plan'
+        : prefix.includes('💌') ? 'letter'
+        : prefix.includes('🗄') ? 'archived'
+        : 'dynamic';
+      stars.push(normalizeStar({
+        id: bucketId, title, pinned, bucketType,
+        resolved: prefix.includes('✅'),
+        ...extractTail(tail), historical: true,
+      }));
+    }
   }
   const filteredStars = stars.filter(Boolean);
   return {
