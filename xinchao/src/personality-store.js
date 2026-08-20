@@ -1,5 +1,5 @@
-import { chmod, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { chmod, copyFile, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 const NEUTRAL_SCORE = 70;
@@ -181,6 +181,8 @@ export function driveBiasFromCore(core = {}) {
   return bias;
 }
 
+const SEED_PATH = resolve(import.meta.dirname ?? '.', '../configs/personality.json');
+
 export class PersonalityStore {
   constructor(path) {
     this.path = String(path ?? '').trim();
@@ -188,10 +190,23 @@ export class PersonalityStore {
     this.cachedMtimeMs = null;
     this.cachedMonth = null;
     this.writeQueue = Promise.resolve();
+    this.seeded = false;
+  }
+
+  async seedIfMissing() {
+    if (this.seeded || !this.path) return;
+    this.seeded = true;
+    try { await stat(this.path); return; } catch {}
+    try {
+      await stat(SEED_PATH);
+      await mkdir(dirname(this.path), { recursive: true });
+      await copyFile(SEED_PATH, this.path);
+    } catch {}
   }
 
   async getPersonalityCore(now = new Date()) {
     if (!this.path) return normalizePersonalityCore({}, 'not-configured');
+    await this.seedIfMissing();
     try {
       const file = await stat(this.path);
       const currentMonth = monthKey(now);
@@ -204,7 +219,6 @@ export class PersonalityStore {
       this.cachedMonth = currentMonth;
       return structuredClone(this.cache);
     } catch (error) {
-      // 私有镜像缺失或损坏时必须 fail-safe：不影响心潮运行，偏置全为 1.0。
       return normalizePersonalityCore({}, error?.code === 'ENOENT' ? 'missing' : 'invalid');
     }
   }
