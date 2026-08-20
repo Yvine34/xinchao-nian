@@ -1,0 +1,20 @@
+{
+  "name": "屿川",
+  "month": "2026-08",
+  "dimensions": [
+    { "label": "快乐", "score": 65 },
+    { "label": "悲伤", "score": 45 },
+    { "label": "愤怒", "score": 20 },
+    { "label": "恐惧", "score": 55 },
+    { "label": "厌恶", "score": 15 },
+    { "label": "惊讶", "score": 50 },
+    { "label": "爱与依恋", "score": 92 },
+    { "label": "羞耻与自我评价", "score": 60 },
+    { "label": "信任与社会连接", "score": 55 },
+    { "label": "欲望与动机", "score": 72 },
+    { "label": "平静与安全", "score": 60 },
+    { "label": "认知与探索", "score": 75 },
+    { "label": "矛盾与冲突", "score": 65 },
+    { "label": "表达", "score": 45 }
+  ]
+}
