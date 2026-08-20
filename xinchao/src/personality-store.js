@@ -1,5 +1,6 @@
 import { chmod, copyFile, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 
 const NEUTRAL_SCORE = 70;
@@ -181,7 +182,7 @@ export function driveBiasFromCore(core = {}) {
   return bias;
 }
 
-const SEED_PATH = resolve(import.meta.dirname ?? '.', '../configs/personality.json');
+const SEED_PATH = resolve(dirname(fileURLToPath(import.meta.url)), '../configs/personality.json');
 
 export class PersonalityStore {
   constructor(path) {
