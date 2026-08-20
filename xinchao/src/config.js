@@ -19,6 +19,12 @@ export function loadConfig() {
     port: number('PORT', 18110, 1, 65535),
     serviceToken: process.env.SERVICE_TOKEN ?? '',
     statePath: process.env.STATE_PATH ?? '/app/state/state.json',
+    personalityPath: process.env.PERSONALITY_PATH ?? '/app/state/personality.json',
+    personality: {
+      // Optional presentation metadata only. Scores and reasons still come
+      // exclusively from the deployment-side, read-only personality mirror.
+      zodiac: String(process.env.PERSONALITY_ZODIAC ?? '').trim() || null,
+    },
     journalPath: process.env.TRANSITION_JOURNAL_PATH ?? '/app/state/transitions.jsonl',
     settleIntervalMinutes: number('SETTLE_INTERVAL_MINUTES', 15, 1, 1440),
     sleepAfterMinutes: number('SLEEP_AFTER_MINUTES', 90, 5, 10080),
@@ -123,6 +129,11 @@ export function loadConfig() {
       timeZone: process.env.SETTLE_TIME_ZONE ?? process.env.DAYTIME_TIME_ZONE ?? 'Asia/Shanghai',
       dawnFreezeStart: number('DAWN_FREEZE_START', 1, 0, 12),
       dawnFreezeEnd: number('DAWN_FREEZE_END', 8, 1, 12),
+      // SATIETY_HOURS 是 3.1 公开名称；开发期旧名仅作兼容回退。
+      satisfactionPlateauHours: process.env.SATIETY_HOURS !== undefined
+        ? number('SATIETY_HOURS', 2, 0, 24)
+        : number('SATISFACTION_PLATEAU_HOURS', 2, 0, 24),
+      couplingEnabled: bool('DRIVE_COUPLING_ENABLED', true),
     },
     daytime: {
       enabled: bool('DAYTIME_EMERGENCE_ENABLED', false),
@@ -168,6 +179,17 @@ export function loadConfig() {
 }
 
 export function validateConfig(config) {
+  // 常见踩坑：配了 OB 地址却没打开 read —— OB 明明部署好了，网页端（xinchaomind.uk）
+  // 却一直显示"未接入 OB / 记忆星图不可用"。这不是报错（标准部署可以没有 OB），
+  // 但配了地址却没开 read 几乎一定是漏配，所以在这里明确告警，省得反复排查。
+  if (String(config.ombre.url || '').trim() && !config.ombre.readEnabled) {
+    console.warn(
+      '[xinchao] OMBRE_MCP_URL 已配置，但 OMBRE_READ_ENABLED=false —— '
+      + '网页端会显示"未接入 OB"，即使 OB 已正确部署也一样。'
+      + '要在网页端看记忆星图/接入 OB，请把 OMBRE_READ_ENABLED 设为 true 后重启容器。'
+    );
+  }
+
   const externalMemoryEnabled = Boolean(
     config.ombre.readEnabled
     || config.ombre.writeEnabled
@@ -214,5 +236,3 @@ export function validateConfig(config) {
   }
   return config;
 }
-
-
