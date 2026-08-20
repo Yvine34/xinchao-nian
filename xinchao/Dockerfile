@@ -9,4 +9,4 @@ RUN mkdir -p /app/state && chown -R node:node /app
 USER node
 ENV NODE_ENV=production
 EXPOSE 18110
-CMD ["node", "src/server.js"]
+CMD ["sh", "-c", "test -f /app/state/personality.json || cp /app/configs/personality.json /app/state/personality.json 2>/dev/null; exec node src/server.js"]
