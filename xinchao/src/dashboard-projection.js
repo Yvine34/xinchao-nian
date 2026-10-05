@@ -1,5 +1,12 @@
-import { DIMENSIONS, DRIVE_KEYS } from './dimensions.js';
+// 【网页与看板】给平台网页的快照：网页只读这里给出的字段。字段格式是网页和各家心潮之间的约定（见 docs/4.0/快照字段.md）。
+// 代码地图见 src/README.md。
+
+import { AXES, moodOf } from './core-axes.js';
+import { recentMarks } from './emotion-marks.js';
+import { DIMENSIONS, DRIVE_KEYS, DRIVE_SHORT } from './dimensions.js';
 import { buildConnectionDiagnostics } from './connection-diagnostics.js';
+import { emotionSummary } from './emotion.js';
+import { awarenessSummary } from './awareness.js';
 
 const clamp = (value, min = 0, max = 1) => Math.max(min, Math.min(max, Number(value) || 0));
 
@@ -25,6 +32,7 @@ function projectedDrives(state) {
     return {
       key,
       label: DIMENSIONS[key].label,
+      short: DRIVE_SHORT[key] ?? null,   // 10-03 网页花瓣用的短名（想她、牵挂…），跟心潮这一份走
       value,
       percent: Math.round(value * 100),
       level: driveLevel(value),
@@ -83,7 +91,10 @@ function projectedDreams(state, includePrivateText, limit = 12) {
       hasSummary: Boolean(summary),
       hasAwareness: Boolean(compact(dream?.awareness)),
       lucidity,
+      // 3.3：醒来心情公开（只是两个数），意象随正文挂私密门
+      mood: dream?.mood && Number.isFinite(Number(dream.mood.valence)) ? { valence: Number(clamp(dream.mood.valence).toFixed(3)), arousal: Number(clamp(dream.mood.arousal).toFixed(3)) } : null,
       ...(includePrivateText ? {
+        image: compact(dream?.image, 24) || null,
         dream: compact(dream?.dream, 4000) || null,
         summary,
         residue: compact(dream?.residue, 1200) || null,
@@ -110,6 +121,13 @@ function projectedPersonality(core = {}, config = {}) {
     month: compact(core?.month ?? history.at(-1)?.month, 7) || null,
     updatedAt: validDate(core?.updatedAt),
     ...(includePrivateText && core?.periodSummary ? { periodSummary: compact(core.periodSummary, 1500) } : {}),
+    // 行为锚点：label 是身份宣言可默认展示；description 更私密，挂 includePrivateText 门。
+    anchors: (Array.isArray(core?.anchors) ? core.anchors : []).map((anchor) => ({
+      key: compact(anchor?.key, 60),
+      label: compact(anchor?.label, 40),
+      addedAt: validDate(anchor?.addedAt),
+      ...(includePrivateText ? { description: compact(anchor?.description, 300) } : {}),
+    })).filter((anchor) => anchor.label),
     dimensions: dimensions.map((dimension) => ({
       key: compact(dimension?.key, 80),
       label: compact(dimension?.label, 80),
@@ -153,7 +171,28 @@ export function buildDashboardSnapshot(state = {}, config = {}, now = new Date()
     },
     drives,
     topDrives,
+    // 情绪层（3.3）：此刻的心情，和驱力分开。成因是互动类型名，不含正文。
+    // 10-03 第 8 步：花蕊——安全感（外圈）、自信（里圈）、心境（颜色）
+    stamen: { security: Number(state.axes?.security ?? AXES.baseline.security), confidence: Number(state.axes?.confidence ?? AXES.baseline.confidence), mood: moodOf(state), baseline: AXES.baseline },
+    emotion: {
+      ...emotionSummary(state, generatedAt),
+      journal: (Array.isArray(state.emotionJournal) ? state.emotionJournal : []).slice(-48),
+      days: state.emotionDays && typeof state.emotionDays === 'object' ? state.emotionDays : {},
+      // 10-03 潮汐带浮标：最近 24 小时有起因的情绪；原话只在开了私密文字时给
+      marks: recentMarks(state, generatedAt, { includePrivateText: Boolean(config.dashboard?.includePrivateText) }),
+    },
+    // 10-03 矛盾：正在拧着的那一场（收掉的不给）
+    mixed: state.selfSignals?.mixed && !state.selfSignals.mixed.capped ? { id: state.selfSignals.mixed.id, name: state.selfSignals.mixed.name, since: state.selfSignals.mixed.since } : null,
     personality: projectedPersonality(personalityCore, config),
+    // 自我觉察（3.3）：候选与已确认，文本是关于 AI 自己的模式描述，不含对话正文。
+    awareness: awarenessSummary(state),
+    // 心潮自身信号（3.3）：他不在窗口时心潮记下并递出去的那几句。只有类型、时间和那一句，没有正文以外的东西。
+    signals: (() => {
+      const history = Array.isArray(state.selfSignals?.history) ? state.selfSignals.history : [];
+      const recent = history.slice(-20).reverse().map((item) => ({ kind: compact(item?.kind, 40), subject: compact(item?.subject, 40), text: compact(item?.text, 80) || null, at: validDate(item?.at) }));
+      const dayAgo = generatedAt.getTime() - 24 * 3_600_000;
+      return { last24h: history.filter((item) => Date.parse(item?.at ?? '') >= dayAgo).length, recent };
+    })(),
     thoughts: projectedThoughts(state, Boolean(config.dashboard?.includePrivateText)),
     dreams: projectedDreams(
       state,

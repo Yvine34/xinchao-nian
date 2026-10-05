@@ -1,3 +1,6 @@
+// 【服务底座】读环境变量：所有可调的开关和数值都从 .env 进来，对照 .env.example 看。
+// 代码地图见 src/README.md。
+
 function bool(name, fallback = false) {
   const raw = process.env[name];
   return raw == null ? fallback : ['1', 'true', 'yes', 'on'].includes(raw.toLowerCase());
@@ -50,7 +53,9 @@ export function loadConfig() {
       readEnabled: bool('OMBRE_READ_ENABLED', false),
       writeEnabled: bool('OMBRE_WRITE_ENABLED', false),
       breathMaxResults: number('OMBRE_BREATH_MAX_RESULTS', 3, 1, 10),
-      breathMaxTokens: number('OMBRE_BREATH_MAX_TOKENS', 800, 200, 3000)
+      breathMaxTokens: number('OMBRE_BREATH_MAX_TOKENS', 800, 200, 3000),
+      // 3.3：把此刻情绪坐标带给 breath（共振排序）和没自带坐标的 hold（情感标签）。
+      emotionStamp: bool('OMBRE_EMOTION_STAMP', true),
     },
     context: {
       enabled: bool('CONTEXT_ENVELOPE_ENABLED', true),
@@ -89,6 +94,10 @@ export function loadConfig() {
     },
     interaction: {
       maxEffectsPerDay: number('INTERACTION_MAX_EFFECTS_PER_DAY', 24, 1, 96),
+      classifyMinMinutes: number('INTERACTION_CLASSIFY_MIN_MINUTES', 8, 1, 240),   // 3.3.8：服务端替判互动类型的节流，和客户端钩子那边一起拧（09-19 她要双向节流）
+      // 3.3.4：MCP（他自己的窗口）直接填的 interaction_type 只认四种自我动作（sharing/reflection/task_progress/discovery）；
+      // 关系类（陪伴/安抚/亲密/冲突/和好…）得给 exchange 让服务端从她的话里判，防止他自己说"她安抚了我"就把驱力放掉。
+      mcpSelfReportGate: bool('MCP_SELF_REPORT_GATE', true),
       timeZone: process.env.INTERACTION_TIME_ZONE ?? process.env.SETTLE_TIME_ZONE ?? 'Asia/Shanghai',
     },
     bridge: {
@@ -98,7 +107,15 @@ export function loadConfig() {
       maxEntries: number('BRIDGE_MAX_ENTRIES', 500, 10, 5000),
       ttlHours: number('BRIDGE_TTL_HOURS', 168, 1, 720),
       pollSeconds: number('BRIDGE_POLL_SECONDS', 15, 2, 300),
+      // 3.3：心潮自身信号（驱力冲顶/情绪转折/挂念/醒来余韵/觉察）经桥递到 AI 窗口。默认关。
+      selfSignals: bool('BRIDGE_SELF_SIGNALS', false),
     },
+    // 黑匣子（3.3）：只有 AI 能看的地方；单独文件，不进 state.json / Dashboard / 备份
+    box: {
+      statePath: process.env.BOX_STATE_PATH ?? '/app/state/black-box.json',
+    },
+    // 从 tools/list 里藏掉的工具（代码保留）。stats 是给 Dashboard 的。
+    toolsHide: new Set(String(process.env.XINCHAO_TOOLS_HIDE ?? 'xinchao_personality_stats').split(',').map((s) => s.trim()).filter(Boolean)),
     cabin: {
       statePath: process.env.CABIN_STATE_PATH ?? '/app/state/cabin.json',
       maxNotes: number('CABIN_MAX_NOTES', 2000, 10, 10000),
@@ -134,6 +151,13 @@ export function loadConfig() {
         ? number('SATIETY_HOURS', 2, 0, 24)
         : number('SATISFACTION_PLATEAU_HOURS', 2, 0, 24),
       couplingEnabled: bool('DRIVE_COUPLING_ENABLED', true),
+      // 3.3：情绪层调制驱力自然增速（难受更惦记、开心更想分享）。只改增速不加数值。
+      emotionModulationEnabled: bool('EMOTION_MODULATION_ENABLED', true),
+    },
+    // 3.3 自我觉察：每天最多挑一条候选，攒到复盘日（默认周日）看一眼；确认时带了自己的话且 OMBRE_WRITE_ENABLED 才写 OB 的 I。
+    awareness: {
+      enabled: bool('AWARENESS_ENABLED', true),
+      reviewWeekday: number('AWARENESS_REVIEW_WEEKDAY', 0, 0, 6),   // 0=周日 … 6=周六
     },
     daytime: {
       enabled: bool('DAYTIME_EMERGENCE_ENABLED', false),
@@ -142,7 +166,9 @@ export function loadConfig() {
       endHour: number('DAYTIME_END_HOUR', 23, 1, 24),
       minIntervalHours: number('DAYTIME_MIN_INTERVAL_HOURS', 2, 0.25, 24),
       maxIntervalHours: number('DAYTIME_MAX_INTERVAL_HOURS', 3, 0.25, 24),
-      maxPerDay: number('DAYTIME_MAX_PER_DAY', 7, 1, 24)
+      maxPerDay: number('DAYTIME_MAX_PER_DAY', 7, 1, 24),
+      // 3.3：默认不再让模型代笔 Bark 给她；浮现的记忆进念头池，反复浮现长成持续念头后经自身信号递给 AI，说不说由 AI 自己定
+      bark: bool('DAYTIME_BARK_ENABLED', false),
     },
     // 输出回流：他说出口的自主表达回过头在思维池里留痕。默认开——闭环的第一块。
     reflux: {
@@ -160,7 +186,7 @@ export function loadConfig() {
       enabled: bool('ANTICIPATION_ENABLED', true),
       arrivalGapMinutes: number('ANTICIPATION_ARRIVAL_GAP_MINUTES', 90, 15, 720)
     },
-    // 挂念：作息预期的另一半。她过了常来的点还没来 → 轻推 monitor(惦记)，硬顶在 3A 天花板内、
+    // 挂念：作息预期的另一半。她过了常来的点还没来 → 轻推 monitor(牵挂)，硬顶在 3A 天花板内、
     // 不自激；只在她活跃时段念，静默时段(在睡)不念。失落内化，绝不责备。
     longing: {
       enabled: bool('LONGING_ENABLED', true),
