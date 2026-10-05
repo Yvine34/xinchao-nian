@@ -1,4 +1,10 @@
-const FLASH_DECAY       = 0.82;
+// 【引擎】念头池：浮现过的记忆和梦留下的念头，慢慢衰减；反复出现的会变成"放不下"。
+// 代码地图见 src/README.md。
+
+const FLASH_DECAY       = 0.82;   // 默认：每次结算（15min）×0.82，约 50 分钟半衰
+// 3.3：闪念可以带自己的衰减率。浮现来的闪念要慢（0.945 ≈ 3 小时半衰），不然浮现间隔 2–3h，池子永远攒不起来。
+export const SURFACED_DECAY = 0.945;
+export const DREAM_DECAY = 0.90;
 const OBSESSION_GROWTH  = 1.10;
 const PROMOTE_THRESHOLD = 0.50;
 const PROMOTE_MIN_AGE   = 3;
@@ -14,7 +20,7 @@ export function newThoughtPool() {
 
 export function tickThoughtPool(pool) {
   pool.flash = pool.flash
-    .map((t) => ({ ...t, intensity: t.intensity * FLASH_DECAY, age: t.age + 1 }))
+    .map((t) => ({ ...t, intensity: t.intensity * (Number.isFinite(t.decay) && t.decay > 0 && t.decay < 1 ? t.decay : FLASH_DECAY), age: t.age + 1 }))
     .filter((t) => t.intensity > 0.05);
 
   const promoted = [];
@@ -39,7 +45,8 @@ export function tickThoughtPool(pool) {
     .map((o) => {
       const next = { ...o, intensity: Math.min(1, o.intensity * OBSESSION_GROWTH) };
       if (next.intensity > FEEDBACK_CEIL && next.feedbacks < MAX_FEEDBACKS) {
-        feedbacks[next.key] = (feedbacks[next.key] ?? 0) + FEEDBACK_AMOUNT;
+        // 3.3.6（09-13）：同一个念头只回推驱力一次；后两次只算寿命、不再推（原来 3 次 ×0.18 把沉淀维钉死在 1.0）
+        if (next.feedbacks === 0) feedbacks[next.key] = (feedbacks[next.key] ?? 0) + FEEDBACK_AMOUNT;
         next.feedbacks += 1;
       }
       return next;
@@ -70,6 +77,7 @@ export function addFlashThought(pool, key, text, intensity = 0.70, metadata = {}
     text,
     intensity: Math.min(1, intensity),
     age: 0,
+    ...(Number.isFinite(metadata.decay) ? { decay: metadata.decay } : {}),
     ...normalizeMemoryRefs(metadata),
   });
 }
@@ -93,6 +101,8 @@ export function reinforceThought(pool, key, text, amount = 0.30, metadata = {}) 
   if (existing) {
     existing.intensity = Math.min(1, existing.intensity + step);
     if (text) existing.text = text;
+    // 再次被强化时取更慢的那个衰减：反复浮现的东西本来就该留得久
+    if (Number.isFinite(metadata.decay)) existing.decay = Math.max(existing.decay ?? 0, metadata.decay);
     const refs = normalizeMemoryRefs(metadata);
     if (refs.ombreBucketId) existing.ombreBucketId = refs.ombreBucketId;
     existing.sourceOmbreBucketIds = [...new Set([
